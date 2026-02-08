@@ -16,10 +16,23 @@ defmodule NepeanCircularWeb.HomeLive do
   @impl true
   def handle_event("subscribe", %{"subscriber" => %{"email" => email}}, socket) do
     case Flyers.subscribe(%{email: email}) do
-      {:ok, _subscriber} ->
+      {:ok, subscriber} ->
+        if is_nil(subscriber.welcomed_at) do
+          %{"subscriber_id" => subscriber.id}
+          |> NepeanCircular.Workers.SendWelcomeEmail.new()
+          |> Oban.insert()
+        end
+
+        flash =
+          if is_nil(subscriber.welcomed_at) && Pdf.combined_pdf_exists?() do
+            "You're subscribed! Check your inbox for this week's flyers."
+          else
+            "You're subscribed! You'll receive weekly flyers every Thursday."
+          end
+
         {:noreply,
          socket
-         |> put_flash(:info, "You're subscribed! You'll receive weekly flyers every Thursday.")
+         |> put_flash(:info, flash)
          |> assign(:subscribe_form, to_form(%{"email" => ""}, as: :subscriber))}
 
       {:error, _changeset} ->

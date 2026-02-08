@@ -17,8 +17,10 @@ defmodule NepeanCircular.Flyers do
     resource NepeanCircular.Flyers.Subscriber do
       define(:subscribe, action: :subscribe)
       define(:unsubscribe, action: :unsubscribe)
+      define(:mark_welcomed, action: :mark_welcomed)
       define(:list_active_subscribers, action: :active)
       define(:get_subscriber_by_token, action: :by_token, args: [:token])
+      define(:get_subscriber, action: :read, get_by: [:id])
     end
   end
 end

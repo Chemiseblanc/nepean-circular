@@ -19,6 +19,7 @@ defmodule NepeanCircular.Flyers.Subscriber do
     )
 
     attribute(:unsubscribed_at, :utc_datetime, public?: false)
+    attribute(:welcomed_at, :utc_datetime, public?: false)
     timestamps()
   end
 
@@ -44,6 +45,11 @@ defmodule NepeanCircular.Flyers.Subscriber do
     read :by_token do
       argument(:token, :string, allow_nil?: false)
       filter(expr(token == ^arg(:token)))
+    end
+
+    update :mark_welcomed do
+      accept([])
+      change(set_attribute(:welcomed_at, &DateTime.utc_now/0))
     end
   end
 

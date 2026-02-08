@@ -27,6 +27,10 @@ defmodule NepeanCircular.Workers.SendFlyerEmails do
               {:ok, _} ->
                 Logger.debug("Sent flyer to #{subscriber.email}")
 
+                if is_nil(subscriber.welcomed_at) do
+                  Flyers.mark_welcomed(subscriber)
+                end
+
               {:error, reason} ->
                 Logger.error("Failed to send flyer to #{subscriber.email}: #{inspect(reason)}")
             end
