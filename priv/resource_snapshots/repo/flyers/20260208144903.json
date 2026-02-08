@@ -1,0 +1,132 @@
+{
+  "attributes": [
+    {
+      "default": "nil",
+      "size": null,
+      "type": "uuid",
+      "source": "id",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": true
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "title",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "pdf_url",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "date",
+      "source": "valid_from",
+      "references": null,
+      "allow_nil?": true,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "date",
+      "source": "valid_to",
+      "references": null,
+      "allow_nil?": true,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "utc_datetime_usec",
+      "source": "scraped_at",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "utc_datetime_usec",
+      "source": "inserted_at",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "utc_datetime_usec",
+      "source": "updated_at",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "uuid",
+      "source": "store_id",
+      "references": {
+        "name": "flyers_store_id_fkey",
+        "table": "stores",
+        "destination_attribute": "id",
+        "on_delete": null,
+        "on_update": null,
+        "deferrable": false,
+        "primary_key?": true,
+        "multitenancy": {
+          "global": null,
+          "attribute": null,
+          "strategy": null
+        },
+        "destination_attribute_default": null,
+        "destination_attribute_generated": null
+      },
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    }
+  ],
+  "table": "flyers",
+  "hash": "C579CEAC5953AA53E131EFC1FF2D3F53F0379FCAC948B8CEF3123BF2B04D9BDE",
+  "repo": "Elixir.NepeanCircular.Repo",
+  "strict?": false,
+  "identities": [
+    {
+      "name": "unique_pdf_url",
+      "keys": [
+        "pdf_url"
+      ],
+      "base_filter": null,
+      "index_name": "flyers_unique_pdf_url_index"
+    }
+  ],
+  "custom_indexes": [],
+  "base_filter": null,
+  "custom_statements": [],
+  "multitenancy": {
+    "global": null,
+    "attribute": null,
+    "strategy": null
+  },
+  "has_create_action": true
+}

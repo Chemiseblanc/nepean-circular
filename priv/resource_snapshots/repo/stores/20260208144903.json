@@ -1,0 +1,98 @@
+{
+  "attributes": [
+    {
+      "default": "nil",
+      "size": null,
+      "type": "uuid",
+      "source": "id",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": true
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "name",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "url",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "scraper_module",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "text",
+      "source": "logo_url",
+      "references": null,
+      "allow_nil?": true,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "boolean",
+      "source": "active",
+      "references": null,
+      "allow_nil?": true,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "utc_datetime_usec",
+      "source": "inserted_at",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    },
+    {
+      "default": "nil",
+      "size": null,
+      "type": "utc_datetime_usec",
+      "source": "updated_at",
+      "references": null,
+      "allow_nil?": false,
+      "generated?": false,
+      "primary_key?": false
+    }
+  ],
+  "table": "stores",
+  "hash": "3E1A96CDC74BAA25900A6CCB04709923B88C8D3B204ED0EFD9C8A7CD7FC13831",
+  "repo": "Elixir.NepeanCircular.Repo",
+  "strict?": false,
+  "identities": [],
+  "custom_indexes": [],
+  "base_filter": null,
+  "custom_statements": [],
+  "multitenancy": {
+    "global": null,
+    "attribute": null,
+    "strategy": null
+  },
+  "has_create_action": true
+}
