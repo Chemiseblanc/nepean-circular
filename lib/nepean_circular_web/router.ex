@@ -19,6 +19,14 @@ defmodule NepeanCircularWeb.Router do
 
     live "/", HomeLive
     live "/stores/:id", StoreLive
+    get "/flyers/combined.pdf", FlyerController, :combined
+    get "/unsubscribe", UnsubscribeController, :unsubscribe
+  end
+
+  scope "/", NepeanCircularWeb do
+    pipe_through :api
+
+    post "/unsubscribe", UnsubscribeController, :unsubscribe
   end
 
   # Other scopes may use custom stacks.

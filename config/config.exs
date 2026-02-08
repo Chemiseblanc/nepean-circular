@@ -32,7 +32,8 @@ config :nepean_circular, Oban,
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
-       {"0 6 * * *", NepeanCircular.Workers.ScrapeFlyers}
+       {"0 6 * * *", NepeanCircular.Workers.ScrapeFlyers},
+       {"0 8 * * 4", NepeanCircular.Workers.SendFlyerEmails}
      ]}
   ]
 
