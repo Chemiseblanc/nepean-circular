@@ -1,0 +1,59 @@
+<Layouts.app flash={@flash}>
+  <div class="space-y-6">
+    <div class="text-center space-y-2">
+      <h1 class="text-3xl font-bold">Nepean Circular</h1>
+      <p class="text-base-content/70">This week's local grocery flyers — all in one place</p>
+    </div>
+
+    <div class="max-w-md mx-auto">
+      <label for={@subscribe_form[:email].id} class="label mb-1">
+        Get flyers by email
+      </label>
+      <.form
+        for={@subscribe_form}
+        id="subscribe-form"
+        phx-submit="subscribe"
+        class="flex flex-col gap-3 sm:flex-row sm:items-center"
+      >
+        <div class="flex-1">
+          <.input
+            field={@subscribe_form[:email]}
+            type="email"
+            placeholder="you@example.com"
+            autocomplete="email"
+            required
+          />
+        </div>
+        <.button type="submit" class="btn btn-primary btn-sm w-full sm:w-auto">
+          Subscribe
+        </.button>
+      </.form>
+    </div>
+
+    <div :if={@has_combined_pdf} class="space-y-4">
+      <div class="flex justify-end">
+        <a
+          href={@combined_pdf_path}
+          download="weekly-flyers.pdf"
+          class="btn btn-primary btn-sm"
+        >
+          Download Combined PDF ↓
+        </a>
+      </div>
+
+      <div class="w-full rounded-lg overflow-hidden border border-base-300" style="height: 85vh;">
+        <iframe
+          src={@combined_pdf_path}
+          class="w-full h-full"
+          title="Combined weekly flyers"
+        >
+        </iframe>
+      </div>
+    </div>
+
+    <div :if={!@has_combined_pdf} class="text-center py-20 space-y-4">
+      <p class="text-lg text-base-content/60">No combined flyer available yet.</p>
+      <p class="text-sm text-base-content/40">Flyers are scraped and combined daily.</p>
+    </div>
+  </div>
+</Layouts.app>
