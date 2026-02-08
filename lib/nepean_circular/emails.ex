@@ -3,8 +3,10 @@ defmodule NepeanCircular.Emails do
 
   alias NepeanCircular.Pdf
 
-  @from {"Nepean Circular", "flyers@nepean-circular.com"}
+  @from {"Nepean Circular", "nepean-circular@boringoption.com"}
 
+  @spec weekly_flyer(%{:email => any(), :token => any(), optional(any()) => any()}) ::
+          Swoosh.Email.t()
   def weekly_flyer(%{email: email, token: token}) do
     unsubscribe_url = NepeanCircularWeb.Endpoint.url() <> "/unsubscribe?token=#{token}"
 
