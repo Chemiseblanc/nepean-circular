@@ -26,7 +26,19 @@ defmodule NepeanCircular.Application do
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: NepeanCircular.Supervisor]
-    Supervisor.start_link(children, opts)
+
+    with {:ok, pid} <- Supervisor.start_link(children, opts) do
+      enqueue_initial_scrape()
+      {:ok, pid}
+    end
+  end
+
+  defp enqueue_initial_scrape do
+    unless NepeanCircular.Pdf.combined_pdf_exists?() do
+      %{}
+      |> NepeanCircular.Workers.InitialScrape.new()
+      |> Oban.insert()
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration
