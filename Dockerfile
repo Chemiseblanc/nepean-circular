@@ -33,8 +33,9 @@ COPY mix.exs mix.lock ./
 RUN mix deps.get --only $MIX_ENV
 RUN mkdir config
 
-# Copy compile-time config (runtime.exs is copied later for the runner)
-COPY config/config.exs config/${MIX_ENV}.exs config/
+# Copy compile-time config and runtime config
+# runtime.exs must be present before `mix release` so it is included in the release
+COPY config/config.exs config/${MIX_ENV}.exs config/runtime.exs config/
 RUN mix deps.compile
 
 COPY priv priv
@@ -81,7 +82,7 @@ ENV LC_ALL="en_US.UTF-8"
 WORKDIR /app
 
 # Create a non-root user to run the app
-RUN groupadd --system app && useradd --system --gid app --home /app app
+RUN groupadd --system --gid 999 app && useradd --system --uid 999 --gid app --home /app app
 
 # Create the SQLite data directory (mount a volume here)
 RUN mkdir -p /data && chown app:app /data

@@ -31,6 +31,9 @@ spec:
       labels:
         app: nepean-circular
     spec:
+      securityContext:
+        # Ensure the PVC mount (/data) is writable by the app user (uid 999)
+        fsGroup: 999
       containers:
         - name: nepean-circular
           image: ${IMAGE_NAME}:latest
@@ -63,10 +66,10 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              memory: "128Mi"
+              memory: "256Mi"
               cpu: "100m"
             limits:
-              memory: "512Mi"
+              memory: "768Mi"
               cpu: "500m"
       volumes:
         - name: data
