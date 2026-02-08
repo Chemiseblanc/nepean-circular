@@ -2,7 +2,9 @@ defmodule NepeanCircularWeb.ErrorJSONTest do
   use NepeanCircularWeb.ConnCase, async: true
 
   test "renders 404" do
-    assert NepeanCircularWeb.ErrorJSON.render("404.json", %{}) == %{errors: %{detail: "Not Found"}}
+    assert NepeanCircularWeb.ErrorJSON.render("404.json", %{}) == %{
+             errors: %{detail: "Not Found"}
+           }
   end
 
   test "renders 500" do

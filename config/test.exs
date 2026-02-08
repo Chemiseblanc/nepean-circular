@@ -39,3 +39,6 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Use Req.Test plug adapter to intercept HTTP requests in tests
+config :nepean_circular, req_options: [plug: {Req.Test, NepeanCircular.HTTP}, retry: false]
