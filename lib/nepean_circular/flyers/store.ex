@@ -27,6 +27,9 @@ defmodule NepeanCircular.Flyers.Store do
 
     create :create do
       accept([:name, :url, :scraper_module, :logo_url, :active])
+      upsert?(true)
+      upsert_identity(:unique_name)
+      upsert_fields([:url, :scraper_module, :logo_url, :active])
     end
 
     update :update do

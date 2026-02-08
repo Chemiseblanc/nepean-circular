@@ -19,7 +19,8 @@ defmodule NepeanCircular.Workers.InitialScrape do
       Logger.info("Combined PDF already exists, skipping initial scrape")
       :ok
     else
-      Logger.info("No combined PDF found — running initial flyer scrape")
+      Logger.info("No combined PDF found — seeding stores and running initial scrape")
+      NepeanCircular.Release.seed_stores()
 
       case NepeanCircular.Scraping.run_all() do
         results when is_list(results) ->

@@ -13,6 +13,43 @@ defmodule NepeanCircular.Release do
     end
   end
 
+  @doc """
+  Seeds the database with the default set of stores.
+  Uses upsert so it is safe to call multiple times.
+  """
+  def seed_stores do
+    stores = [
+      %{
+        name: "Farmer's Pick",
+        url: "https://www.farmerspick.ca/flyer-specials",
+        scraper_module: NepeanCircular.Scraping.FarmersPick,
+        active: true
+      },
+      %{
+        name: "Produce Depot",
+        url: "https://producedepot.ca/weekly-specials/",
+        scraper_module: NepeanCircular.Scraping.ProduceDepot,
+        active: true
+      },
+      %{
+        name: "Farm Boy",
+        url: "https://www.farmboy.ca/weekly-flyer-specials/",
+        scraper_module: NepeanCircular.Scraping.FarmBoy,
+        active: true
+      },
+      %{
+        name: "Green Fresh",
+        url: "https://greenfreshottawa20.wixsite.com/greenfreshottawa/services-4-1",
+        scraper_module: NepeanCircular.Scraping.GreenFresh,
+        active: true
+      }
+    ]
+
+    for attrs <- stores do
+      NepeanCircular.Flyers.create_store(attrs)
+    end
+  end
+
   def rollback(repo, version) do
     load_app()
     {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: version))
