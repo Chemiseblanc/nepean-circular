@@ -21,17 +21,8 @@ defmodule NepeanCircular.Scraping do
           Enum.map(flyer_attrs_list, fn attrs ->
             case Flyers.create_flyer(attrs) do
               {:ok, flyer} ->
-                Logger.info("Created flyer: #{flyer.title} (#{flyer.pdf_url})")
+                Logger.info("Upserted flyer: #{flyer.title} (#{flyer.pdf_url})")
                 {:ok, flyer}
-
-              {:error, %Ash.Error.Invalid{} = error} ->
-                if has_unique_constraint_error?(error) do
-                  Logger.debug("Flyer already exists: #{attrs.pdf_url}")
-                  :exists
-                else
-                  Logger.warning("Failed to create flyer: #{inspect(error)}")
-                  {:error, error}
-                end
 
               {:error, error} ->
                 Logger.warning("Failed to create flyer: #{inspect(error)}")
@@ -40,7 +31,7 @@ defmodule NepeanCircular.Scraping do
           end)
 
         new_count = Enum.count(results, &match?({:ok, _}, &1))
-        Logger.info("Scrape complete for #{store.name}: #{new_count} new flyer(s)")
+        Logger.info("Scrape complete for #{store.name}: #{new_count} flyer(s)")
         {:ok, new_count}
 
       {:error, reason} ->
@@ -50,30 +41,25 @@ defmodule NepeanCircular.Scraping do
   end
 
   @doc """
-  Scrape all active stores.
+  Scrape all active stores, then regenerate the combined PDF.
   """
   def run_all do
     case Flyers.list_stores() do
       {:ok, stores} ->
-        stores
-        |> Enum.filter(& &1.active)
-        |> Enum.map(fn store ->
-          {store.name, run(store)}
-        end)
+        results =
+          stores
+          |> Enum.filter(& &1.active)
+          |> Enum.map(fn store ->
+            {store.name, run(store)}
+          end)
+
+        NepeanCircular.Pdf.generate_combined()
+
+        results
 
       {:error, reason} ->
         Logger.warning("Failed to list stores: #{inspect(reason)}")
         {:error, reason}
     end
-  end
-
-  defp has_unique_constraint_error?(%Ash.Error.Invalid{errors: errors}) do
-    Enum.any?(errors, fn
-      %Ash.Error.Changes.InvalidChanges{message: msg} ->
-        String.contains?(to_string(msg), "unique")
-
-      _ ->
-        false
-    end)
   end
 end

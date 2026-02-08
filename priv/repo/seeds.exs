@@ -16,6 +16,18 @@ stores = [
     url: "https://producedepot.ca/weekly-specials/",
     scraper_module: NepeanCircular.Scraping.ProduceDepot,
     active: true
+  },
+  %{
+    name: "Farm Boy",
+    url: "https://www.farmboy.ca/weekly-flyer-specials/",
+    scraper_module: NepeanCircular.Scraping.FarmBoy,
+    active: true
+  },
+  %{
+    name: "Green Fresh",
+    url: "https://greenfreshottawa20.wixsite.com/greenfreshottawa/services-4-1",
+    scraper_module: NepeanCircular.Scraping.GreenFresh,
+    active: true
   }
 ]
 

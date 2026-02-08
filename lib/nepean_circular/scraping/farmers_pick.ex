@@ -11,16 +11,12 @@ defmodule NepeanCircular.Scraping.FarmersPick do
 
   @impl true
   def scrape(store) do
-    case Req.get(store.url, headers: [{"user-agent", user_agent()}]) do
-      {:ok, %Req.Response{status: 200, body: body}} ->
-        parse_flyers(body, store)
-
-      {:ok, %Req.Response{status: status}} ->
-        Logger.warning("FarmersPick: unexpected status #{status} from #{store.url}")
-        {:error, {:unexpected_status, status}}
+    case NepeanCircular.HTTP.get_body(store.url) do
+      {:ok, body} ->
+        {:ok, parse_flyers(body, store)}
 
       {:error, reason} ->
-        Logger.warning("FarmersPick: request failed: #{inspect(reason)}")
+        Logger.warning("FarmersPick: failed to fetch #{store.url}: #{inspect(reason)}")
         {:error, reason}
     end
   end
@@ -37,12 +33,9 @@ defmodule NepeanCircular.Scraping.FarmersPick do
       |> Enum.filter(&String.starts_with?(&1, "/s/"))
       |> Enum.uniq()
       |> Enum.map(fn path ->
-        pdf_url = "https://www.farmerspick.ca" <> path
-        title = title_from_path(path)
-
         %{
-          title: title,
-          pdf_url: pdf_url,
+          title: title_from_path(path),
+          pdf_url: "https://www.farmerspick.ca" <> path,
           store_id: store.id
         }
       end)
@@ -51,7 +44,7 @@ defmodule NepeanCircular.Scraping.FarmersPick do
       Logger.warning("FarmersPick: no PDF links found on #{store.url}")
     end
 
-    {:ok, flyers}
+    flyers
   end
 
   defp title_from_path(path) do
@@ -59,12 +52,9 @@ defmodule NepeanCircular.Scraping.FarmersPick do
     |> Path.basename(".pdf")
     |> String.replace("-", " ")
     |> String.replace(~r/^\d{8}\s*/, "")
-    |> then(fn name ->
-      if name == "", do: "Weekly Flyer", else: name
+    |> then(fn
+      "" -> "Weekly Flyer"
+      name -> name
     end)
-  end
-
-  defp user_agent do
-    "NepeanCircular/1.0 (grocery flyer aggregator)"
   end
 end

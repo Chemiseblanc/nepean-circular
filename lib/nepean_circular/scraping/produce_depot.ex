@@ -12,16 +12,12 @@ defmodule NepeanCircular.Scraping.ProduceDepot do
 
   @impl true
   def scrape(store) do
-    case Req.get(store.url, headers: [{"user-agent", user_agent()}]) do
-      {:ok, %Req.Response{status: 200, body: body}} ->
-        parse_flyers(body, store)
-
-      {:ok, %Req.Response{status: status}} ->
-        Logger.warning("ProduceDepot: unexpected status #{status} from #{store.url}")
-        {:error, {:unexpected_status, status}}
+    case NepeanCircular.HTTP.get_body(store.url) do
+      {:ok, body} ->
+        {:ok, parse_flyers(body, store)}
 
       {:error, reason} ->
-        Logger.warning("ProduceDepot: request failed: #{inspect(reason)}")
+        Logger.warning("ProduceDepot: failed to fetch #{store.url}: #{inspect(reason)}")
         {:error, reason}
     end
   end
@@ -29,24 +25,16 @@ defmodule NepeanCircular.Scraping.ProduceDepot do
   defp parse_flyers(html, store) do
     {:ok, document} = Floki.parse_document(html)
 
-    # Strategy 1: Look for pdfemb shortcode data attributes
-    pdf_urls = extract_pdfemb_urls(document)
-
-    # Strategy 2: Look for direct <a> links to PDFs
     pdf_urls =
-      if pdf_urls == [] do
-        extract_link_urls(document)
-      else
-        pdf_urls
-      end
-
-    # Strategy 3: Look for iframe/object/embed with PDF src
-    pdf_urls =
-      if pdf_urls == [] do
-        extract_embedded_urls(html)
-      else
-        pdf_urls
-      end
+      extract_pdfemb_urls(document)
+      |> then(fn
+        [] -> extract_link_urls(document)
+        urls -> urls
+      end)
+      |> then(fn
+        [] -> extract_embedded_urls(html)
+        urls -> urls
+      end)
 
     flyers =
       pdf_urls
@@ -63,7 +51,7 @@ defmodule NepeanCircular.Scraping.ProduceDepot do
       Logger.warning("ProduceDepot: no PDF links found on #{store.url}")
     end
 
-    {:ok, flyers}
+    flyers
   end
 
   defp extract_pdfemb_urls(document) do
@@ -92,9 +80,5 @@ defmodule NepeanCircular.Scraping.ProduceDepot do
   defp ensure_absolute(path, base_url) do
     uri = URI.parse(base_url)
     "#{uri.scheme}://#{uri.host}#{path}"
-  end
-
-  defp user_agent do
-    "NepeanCircular/1.0 (grocery flyer aggregator)"
   end
 end

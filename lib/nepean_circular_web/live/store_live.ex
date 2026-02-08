@@ -7,21 +7,18 @@ defmodule NepeanCircularWeb.StoreLive do
   def mount(%{"id" => id}, _session, socket) do
     case Flyers.get_store(id) do
       {:ok, store} ->
-        {:ok, flyers} = Flyers.list_flyers()
-
-        store_flyers =
-          flyers
-          |> Enum.filter(&(&1.store_id == store.id))
-          |> Enum.sort_by(& &1.scraped_at, {:desc, DateTime})
-
-        current_flyer = List.first(store_flyers)
+        current_flyer =
+          case Flyers.current_flyer_for_store(store.id) do
+            {:ok, [flyer | _]} -> flyer
+            _ -> nil
+          end
 
         {:ok,
          socket
          |> assign(:page_title, store.name)
          |> assign(:store, store)
-         |> assign(:flyers, store_flyers)
-         |> assign(:current_flyer, current_flyer)}
+         |> assign(:current_flyer, current_flyer)
+         |> assign(:flyer_url, viewable_url(current_flyer))}
 
       {:error, _} ->
         {:ok,
@@ -30,6 +27,11 @@ defmodule NepeanCircularWeb.StoreLive do
          |> push_navigate(to: ~p"/")}
     end
   end
+
+  # file:// URLs can't be displayed in browser iframes — serve via controller instead
+  defp viewable_url(nil), do: nil
+  defp viewable_url(%{pdf_url: "file://" <> _}), do: nil
+  defp viewable_url(%{pdf_url: url}), do: url
 
   @impl true
   def render(assigns) do
@@ -43,11 +45,11 @@ defmodule NepeanCircularWeb.StoreLive do
           <h1 class="text-2xl font-bold">{@store.name}</h1>
         </div>
 
-        <div :if={@current_flyer} class="space-y-4">
+        <div :if={@current_flyer && @flyer_url} class="space-y-4">
           <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold">{@current_flyer.title}</h2>
             <a
-              href={@current_flyer.pdf_url}
+              href={@flyer_url}
               target="_blank"
               rel="noopener"
               class="btn btn-primary btn-sm"
@@ -58,7 +60,7 @@ defmodule NepeanCircularWeb.StoreLive do
 
           <div class="w-full rounded-lg overflow-hidden border border-base-300" style="height: 80vh;">
             <iframe
-              src={@current_flyer.pdf_url}
+              src={@flyer_url}
               class="w-full h-full"
               title={"#{@store.name} flyer"}
             >
@@ -66,20 +68,18 @@ defmodule NepeanCircularWeb.StoreLive do
           </div>
         </div>
 
-        <div :if={!@current_flyer} class="text-center py-12">
-          <p class="text-base-content/60">No flyer available for this store yet.</p>
+        <div :if={@current_flyer && !@flyer_url} class="text-center py-12 space-y-2">
+          <p class="text-base-content/70">{@current_flyer.title}</p>
+          <p class="text-sm text-base-content/40">
+            This flyer is included in the combined PDF on the homepage.
+          </p>
+          <.link navigate={~p"/"} class="btn btn-primary btn-sm">
+            View Combined Flyers
+          </.link>
         </div>
 
-        <div :if={length(@flyers) > 1} class="space-y-2">
-          <h3 class="text-lg font-semibold">Previous Flyers</h3>
-          <ul class="space-y-1">
-            <li :for={flyer <- tl(@flyers)} class="flex items-center justify-between py-2 px-3 rounded bg-base-200">
-              <span>{flyer.title}</span>
-              <a href={flyer.pdf_url} target="_blank" rel="noopener" class="link link-primary text-sm">
-                View PDF
-              </a>
-            </li>
-          </ul>
+        <div :if={!@current_flyer} class="text-center py-12">
+          <p class="text-base-content/60">No flyer available for this store yet.</p>
         </div>
       </div>
     </Layouts.app>

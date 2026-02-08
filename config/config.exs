@@ -12,6 +12,18 @@ config :nepean_circular,
   generators: [timestamp_type: :utc_datetime],
   ash_domains: [NepeanCircular.Flyers]
 
+config :pythonx, :uv_init,
+  pyproject_toml: """
+  [project]
+  name = "nepean_circular"
+  version = "0.0.0"
+  requires-python = "==3.13.*"
+  dependencies = [
+    "pypdf>=4.0",
+    "Pillow>=10.0"
+  ]
+  """
+
 config :nepean_circular, Oban,
   engine: Oban.Engines.Lite,
   repo: NepeanCircular.Repo,

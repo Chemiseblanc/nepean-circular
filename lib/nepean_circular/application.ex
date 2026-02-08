@@ -10,10 +10,11 @@ defmodule NepeanCircular.Application do
     children = [
       NepeanCircularWeb.Telemetry,
       NepeanCircular.Repo,
-      {Oban, AshOban.config(
-        Application.fetch_env!(:nepean_circular, :ash_domains),
-        Application.fetch_env!(:nepean_circular, Oban)
-      )},
+      {Oban,
+       AshOban.config(
+         Application.fetch_env!(:nepean_circular, :ash_domains),
+         Application.fetch_env!(:nepean_circular, Oban)
+       )},
       {Ecto.Migrator,
        repos: Application.fetch_env!(:nepean_circular, :ecto_repos), skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:nepean_circular, :dns_cluster_query) || :ignore},
