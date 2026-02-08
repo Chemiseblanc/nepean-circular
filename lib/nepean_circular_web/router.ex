@@ -14,6 +14,11 @@ defmodule NepeanCircularWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Health check endpoint for K8s probes (no auth, no SSL redirect)
+  scope "/" do
+    get "/health", NepeanCircularWeb.HealthController, :index
+  end
+
   scope "/", NepeanCircularWeb do
     pipe_through :browser
 

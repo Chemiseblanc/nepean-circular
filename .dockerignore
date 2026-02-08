@@ -1,0 +1,31 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+_build/
+deps/
+
+# Node / JS (handled by esbuild)
+assets/node_modules/
+
+# Dev & test files
+.elixir_ls/
+.formatter.exs
+.credo.exs
+test/
+cover/
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# K8s & CI
+k8s/
+.github/
+
+# OS
+.DS_Store
+*.swp
+*.swo
