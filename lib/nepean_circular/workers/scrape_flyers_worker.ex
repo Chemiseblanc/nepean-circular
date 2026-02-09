@@ -9,15 +9,20 @@ defmodule NepeanCircular.Workers.ScrapeFlyers do
 
   @impl Oban.Worker
   def perform(_job) do
+    Phoenix.PubSub.broadcast(NepeanCircular.PubSub, "scraping", :scrape_started)
     Logger.info("Starting scheduled flyer scrape")
 
-    case NepeanCircular.Scraping.run_all() do
-      results when is_list(results) ->
-        Logger.info("Scrape results: #{inspect(results)}")
-        :ok
+    result =
+      case NepeanCircular.Scraping.run_all() do
+        results when is_list(results) ->
+          Logger.info("Scrape results: #{inspect(results)}")
+          :ok
 
-      {:error, reason} ->
-        {:error, reason}
-    end
+        {:error, reason} ->
+          {:error, reason}
+      end
+
+    Phoenix.PubSub.broadcast(NepeanCircular.PubSub, "scraping", :scrape_finished)
+    result
   end
 end

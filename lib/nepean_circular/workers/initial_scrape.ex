@@ -14,17 +14,22 @@ defmodule NepeanCircular.Workers.InitialScrape do
 
   @impl Oban.Worker
   def perform(_job) do
+    Phoenix.PubSub.broadcast(NepeanCircular.PubSub, "scraping", :scrape_started)
     NepeanCircular.Pdf.clean_generated_pdfs()
     Logger.info("Cleaned old PDFs — seeding stores and running scrape")
     NepeanCircular.Release.seed_stores()
 
-    case NepeanCircular.Scraping.run_all() do
-      results when is_list(results) ->
-        Logger.info("Initial scrape results: #{inspect(results)}")
-        :ok
+    result =
+      case NepeanCircular.Scraping.run_all() do
+        results when is_list(results) ->
+          Logger.info("Initial scrape results: #{inspect(results)}")
+          :ok
 
-      {:error, reason} ->
-        {:error, reason}
-    end
+        {:error, reason} ->
+          {:error, reason}
+      end
+
+    Phoenix.PubSub.broadcast(NepeanCircular.PubSub, "scraping", :scrape_finished)
+    result
   end
 end

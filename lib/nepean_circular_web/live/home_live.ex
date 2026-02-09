@@ -5,12 +5,38 @@ defmodule NepeanCircularWeb.HomeLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      Phoenix.PubSub.subscribe(NepeanCircular.PubSub, "scraping")
+    end
+
     {:ok,
      socket
      |> assign(:page_title, "Weekly Flyers")
      |> assign(:has_combined_pdf, Pdf.combined_pdf_exists?())
      |> assign(:combined_pdf_path, Pdf.combined_pdf_path())
+     |> assign(:scraping?, scraping_in_progress?())
      |> assign(:subscribe_form, to_form(%{"email" => ""}, as: :subscriber))}
+  end
+
+  defp scraping_in_progress? do
+    import Ecto.Query
+
+    NepeanCircular.Repo.exists?(
+      from j in Oban.Job,
+        where: j.queue == "scraping" and j.state in ["executing", "available"]
+    )
+  end
+
+  @impl true
+  def handle_info(:scrape_started, socket) do
+    {:noreply, assign(socket, :scraping?, true)}
+  end
+
+  def handle_info(:scrape_finished, socket) do
+    {:noreply,
+     socket
+     |> assign(:scraping?, false)
+     |> assign(:has_combined_pdf, Pdf.combined_pdf_exists?())}
   end
 
   @impl true
