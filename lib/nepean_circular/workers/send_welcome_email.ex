@@ -1,5 +1,7 @@
 defmodule NepeanCircular.Workers.SendWelcomeEmail do
-  use Oban.Worker, queue: :default, unique: [keys: [:subscriber_id]]
+  use Oban.Worker,
+    queue: :default,
+    unique: [keys: [:subscriber_id], states: [:available, :scheduled, :executing]]
 
   alias NepeanCircular.{Emails, Flyers, Mailer, Pdf}
 

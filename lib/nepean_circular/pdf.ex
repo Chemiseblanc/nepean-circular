@@ -10,6 +10,8 @@ defmodule NepeanCircular.Pdf do
   alias NepeanCircular.HTTP
 
   @combined_filename "weekly-flyers.pdf"
+  @combined_email_filename "weekly-flyers-email.pdf"
+  @email_max_bytes 9_500_000
 
   defp data_dir do
     Application.app_dir(:nepean_circular, "data")
@@ -26,9 +28,30 @@ defmodule NepeanCircular.Pdf do
   def combined_pdf_file, do: Path.join(data_dir(), @combined_filename)
 
   @doc """
+  Returns the filesystem path to the low-res email PDF.
+  """
+  def combined_email_pdf_file, do: Path.join(data_dir(), @combined_email_filename)
+
+  @doc """
   Returns true if a combined PDF exists on disk.
   """
   def combined_pdf_exists?, do: File.exists?(combined_pdf_file())
+
+  @doc """
+  Removes all generated PDFs from the data directory.
+  """
+  def clean_generated_pdfs do
+    dir = data_dir()
+
+    if File.dir?(dir) do
+      dir
+      |> File.ls!()
+      |> Enum.filter(&String.ends_with?(&1, ".pdf"))
+      |> Enum.each(fn file ->
+        File.rm(Path.join(dir, file))
+      end)
+    end
+  end
 
   @doc """
   Downloads current flyer PDFs from all active stores and combines them
@@ -88,16 +111,30 @@ defmodule NepeanCircular.Pdf do
         """
         from PIL import Image
 
+        MAX_WIDTH = 1200  # px — enough for readability, avoids huge images
+        JPEG_QUALITY = 70
+
         images = []
         for path in image_paths:
             img = Image.open(str(path, "utf-8"))
             if img.mode == "RGBA":
                 img = img.convert("RGB")
+
+            # Downscale wide images to MAX_WIDTH, preserving aspect ratio
+            if img.width > MAX_WIDTH:
+                ratio = MAX_WIDTH / img.width
+                new_h = int(img.height * ratio)
+                img = img.resize((MAX_WIDTH, new_h), Image.LANCZOS)
+
             images.append(img)
 
         if images:
             first, *rest = images
-            first.save(str(output_path, "utf-8"), "PDF", save_all=True, append_images=rest)
+            first.save(
+                str(output_path, "utf-8"), "PDF",
+                save_all=True, append_images=rest,
+                quality=JPEG_QUALITY, optimize=True
+            )
         """,
         %{"image_paths" => image_paths, "output_path" => output}
       )
@@ -275,6 +312,7 @@ defmodule NepeanCircular.Pdf do
 
     Logger.info("Combined PDF generated: #{output}")
     cleanup_temps(paths)
+    generate_email_pdf(output)
     {:ok, output}
   rescue
     e ->
@@ -282,6 +320,63 @@ defmodule NepeanCircular.Pdf do
       store_paths |> Enum.map(fn {_name, path} -> path end) |> cleanup_temps()
       {:error, {:pypdf_failed, Exception.message(e)}}
   end
+
+  @doc """
+  Generates a low-res email-friendly PDF from the combined high-res PDF.
+  Uses aggressive Ghostscript compression to stay under Postmark's 10 MB limit.
+  """
+  def generate_email_pdf(source_path) do
+    output = combined_email_pdf_file()
+
+    args = [
+      "-sDEVICE=pdfwrite",
+      "-dCompatibilityLevel=1.4",
+      "-dPDFSETTINGS=/screen",
+      "-dNOPAUSE",
+      "-dBATCH",
+      "-dQUIET",
+      # Force downsampling all color/gray images
+      "-dDownsampleColorImages=true",
+      "-dDownsampleGrayImages=true",
+      "-dDownsampleMonoImages=true",
+      # Downsample threshold of 1.0 forces re-encoding even at target DPI
+      "-dColorImageDownsampleThreshold=1.0",
+      "-dGrayImageDownsampleThreshold=1.0",
+      "-dColorImageDownsampleType=/Bicubic",
+      "-dGrayImageDownsampleType=/Bicubic",
+      "-dColorImageResolution=72",
+      "-dGrayImageResolution=72",
+      "-dMonoImageResolution=72",
+      "-sOutputFile=#{output}",
+      source_path
+    ]
+
+    case System.cmd("gs", args, stderr_to_stdout: true) do
+      {_, 0} ->
+        original_size = File.stat!(source_path).size
+        email_size = File.stat!(output).size
+
+        Logger.info(
+          "Email PDF generated: #{format_bytes(original_size)} → #{format_bytes(email_size)}"
+        )
+
+        if email_size > @email_max_bytes do
+          Logger.warning(
+            "Email PDF still large (#{format_bytes(email_size)}), may exceed Postmark limit"
+          )
+        end
+
+        {:ok, output}
+
+      {gs_output, code} ->
+        Logger.warning("Ghostscript email PDF failed (exit #{code}): #{gs_output}")
+        {:error, {:gs_failed, code}}
+    end
+  end
+
+  defp format_bytes(bytes) when bytes >= 1_048_576, do: "#{Float.round(bytes / 1_048_576, 1)} MB"
+  defp format_bytes(bytes) when bytes >= 1024, do: "#{Float.round(bytes / 1024, 1)} KB"
+  defp format_bytes(bytes), do: "#{bytes} B"
 
   defp cleanup_temps(paths) do
     tmp_dir = System.tmp_dir!()

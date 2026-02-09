@@ -71,6 +71,7 @@ RUN apt-get update -y && \
       libstdc++6 openssl libncurses5 locales ca-certificates \
       python3 python3-venv python3-pip \
       libjpeg62-turbo libpng16-16 zlib1g libfreetype6 \
+      ghostscript \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Set the locale

@@ -1,10 +1,9 @@
 defmodule NepeanCircular.Workers.InitialScrape do
   @moduledoc """
-  Oban worker that performs the first-time flyer scrape on application startup.
+  Oban worker that performs a flyer scrape on application startup.
 
-  This is separate from the recurring `ScrapeFlyers` cron job. It runs once when
-  the app boots and no combined PDF exists yet, ensuring flyers are available
-  immediately rather than waiting for the next scheduled scrape.
+  This always runs on boot to ensure the combined PDF reflects the latest
+  scraping and generation logic. Old PDFs are cleaned before regenerating.
 
   The job uses `unique` to prevent duplicate runs if the app restarts quickly.
   """
@@ -15,21 +14,17 @@ defmodule NepeanCircular.Workers.InitialScrape do
 
   @impl Oban.Worker
   def perform(_job) do
-    if NepeanCircular.Pdf.combined_pdf_exists?() do
-      Logger.info("Combined PDF already exists, skipping initial scrape")
-      :ok
-    else
-      Logger.info("No combined PDF found — seeding stores and running initial scrape")
-      NepeanCircular.Release.seed_stores()
+    NepeanCircular.Pdf.clean_generated_pdfs()
+    Logger.info("Cleaned old PDFs — seeding stores and running scrape")
+    NepeanCircular.Release.seed_stores()
 
-      case NepeanCircular.Scraping.run_all() do
-        results when is_list(results) ->
-          Logger.info("Initial scrape results: #{inspect(results)}")
-          :ok
+    case NepeanCircular.Scraping.run_all() do
+      results when is_list(results) ->
+        Logger.info("Initial scrape results: #{inspect(results)}")
+        :ok
 
-        {:error, reason} ->
-          {:error, reason}
-      end
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 end

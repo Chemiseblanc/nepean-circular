@@ -1,0 +1,97 @@
+name: Setup ExternalDNS
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Install or uninstall ExternalDNS"
+        required: true
+        default: install
+        type: choice
+        options:
+          - install
+          - uninstall
+
+# Required secrets:
+#   DIGITALOCEAN_ACCESS_TOKEN — existing, used to authenticate doctl
+#   DO_DNS_TOKEN             — DigitalOcean PAT with read/write DNS scope
+#
+# Required vars:
+#   DOKS_CLUSTER_NAME — name of the DOKS cluster
+#   PHX_HOST          — e.g. app.example.com (used to derive the domain filter)
+
+jobs:
+  setup:
+    name: ExternalDNS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Save DOKS kubeconfig
+        run: doctl kubernetes cluster kubeconfig save ${{ vars.DOKS_CLUSTER_NAME }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      # ── Uninstall path ──────────────────────────────────────────────
+      - name: Uninstall ExternalDNS
+        if: inputs.action == 'uninstall'
+        run: |
+          helm uninstall external-dns -n external-dns --ignore-not-found
+          kubectl delete secret digitalocean-dns -n external-dns --ignore-not-found
+          kubectl delete namespace external-dns --ignore-not-found
+
+      # ── Install path ────────────────────────────────────────────────
+      - name: Create external-dns namespace
+        if: inputs.action == 'install'
+        run: |
+          kubectl create namespace external-dns --dry-run=client -o yaml \
+            | kubectl apply -f -
+
+      - name: Create DigitalOcean DNS secret
+        if: inputs.action == 'install'
+        run: |
+          kubectl create secret generic digitalocean-dns \
+            --namespace external-dns \
+            --from-literal=access-token=${{ secrets.DO_DNS_TOKEN }} \
+            --dry-run=client -o yaml \
+            | kubectl apply -f -
+
+      - name: Extract domain from PHX_HOST
+        if: inputs.action == 'install'
+        id: domain
+        run: |
+          # e.g. app.example.com → example.com
+          DOMAIN=$(echo "${{ vars.PHX_HOST }}" | awk -F. '{print $(NF-1)"."$NF}')
+          echo "filter=$DOMAIN" >> "$GITHUB_OUTPUT"
+
+      - name: Install ExternalDNS via Helm
+        if: inputs.action == 'install'
+        run: |
+          helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/
+          helm repo update
+
+          helm upgrade --install external-dns external-dns/external-dns \
+            --namespace external-dns \
+            --set provider.name=digitalocean \
+            --set env[0].name=DO_TOKEN \
+            --set env[0].valueFrom.secretKeyRef.name=digitalocean-dns \
+            --set env[0].valueFrom.secretKeyRef.key=access-token \
+            --set "sources[0]=gateway-httproute" \
+            --set "domainFilters[0]=${{ steps.domain.outputs.filter }}" \
+            --set policy=upsert-only \
+            --set txtOwnerId=nepean-circular \
+            --wait --timeout 120s
+
+      - name: Verify ExternalDNS is running
+        if: inputs.action == 'install'
+        run: |
+          kubectl rollout status deployment/external-dns \
+            -n external-dns --timeout=60s
+          echo "--- ExternalDNS pods ---"
+          kubectl get pods -n external-dns

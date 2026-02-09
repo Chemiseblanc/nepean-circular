@@ -99,6 +99,8 @@ kind: Gateway
 metadata:
   name: nepean-circular
   namespace: nepean-circular
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: "${PHX_HOST}"
 spec:
   gatewayClassName: cilium
   infrastructure:

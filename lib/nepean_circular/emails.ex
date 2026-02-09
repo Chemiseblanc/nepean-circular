@@ -20,7 +20,7 @@ defmodule NepeanCircular.Emails do
       |> html_body(html_body(unsubscribe_url))
       |> text_body(text_body(unsubscribe_url))
 
-    pdf_path = Pdf.combined_pdf_file()
+    pdf_path = Pdf.combined_email_pdf_file()
 
     if File.exists?(pdf_path) do
       attachment(email, Swoosh.Attachment.new(pdf_path, filename: "weekly-flyers.pdf"))

@@ -34,11 +34,9 @@ defmodule NepeanCircular.Application do
   end
 
   defp enqueue_initial_scrape do
-    unless NepeanCircular.Pdf.combined_pdf_exists?() do
-      %{}
-      |> NepeanCircular.Workers.InitialScrape.new()
-      |> Oban.insert()
-    end
+    %{}
+    |> NepeanCircular.Workers.InitialScrape.new()
+    |> Oban.insert()
   end
 
   # Tell Phoenix to update the endpoint configuration
