@@ -17,6 +17,7 @@ defmodule NepeanCircular.Emails do
       |> subject("This Week's Grocery Flyers")
       |> header("List-Unsubscribe", "<#{unsubscribe_url}>")
       |> header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
+      |> put_provider_option(:message_stream, "grocery-weekly-newsletter")
       |> html_body(html_body(unsubscribe_url))
       |> text_body(text_body(unsubscribe_url))
 

@@ -8,6 +8,7 @@ data:
   PORT: "4000"
   PHX_SERVER: "true"
   PHX_HOST: "${PHX_HOST}"
+  TZ: "America/Toronto"
 ---
 apiVersion: apps/v1
 kind: Deployment
