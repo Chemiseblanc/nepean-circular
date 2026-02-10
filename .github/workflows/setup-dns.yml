@@ -13,8 +13,7 @@ on:
           - uninstall
 
 # Required secrets:
-#   DIGITALOCEAN_ACCESS_TOKEN — existing, used to authenticate doctl
-#   DO_DNS_TOKEN             — DigitalOcean PAT with read/write DNS scope
+#   DIGITALOCEAN_ACCESS_TOKEN — DigitalOcean PAT with read/write DNS scope (doctl + external-dns)
 #
 # Required vars:
 #   DOKS_CLUSTER_NAME — name of the DOKS cluster
@@ -58,7 +57,7 @@ jobs:
         run: |
           kubectl create secret generic digitalocean-dns \
             --namespace external-dns \
-            --from-literal=access-token=${{ secrets.DO_DNS_TOKEN }} \
+            --from-literal=access-token=${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }} \
             --dry-run=client -o yaml \
             | kubectl apply -f -
 
