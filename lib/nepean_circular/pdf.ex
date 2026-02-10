@@ -1,7 +1,12 @@
 defmodule NepeanCircular.Pdf do
   @moduledoc """
   Downloads individual flyer PDFs and combines them into a single file
-  using pypdf via Pythonx.
+  using qpdf for merging and Ghostscript for PDF generation.
+
+  No Python runtime dependency — all PDF operations use CLI tools:
+  - `qpdf` — streaming PDF merge (very memory-efficient)
+  - `gs` (Ghostscript) — image→PDF, TOC generation with pdfmark links,
+    and email PDF compression
   """
 
   require Logger
@@ -79,6 +84,9 @@ defmodule NepeanCircular.Pdf do
   Downloads flyer images from URLs and converts them into a single PDF
   stored in the data directory. Returns `{:ok, path}` or `{:error, reason}`.
 
+  Uses Ghostscript to render a PostScript program that loads and embeds
+  each image as a PDF page with optional downscaling.
+
   The `store_key` is used to name the output file (e.g., "green_fresh").
   """
   def images_to_pdf(image_urls, store_key) do
@@ -106,47 +114,50 @@ defmodule NepeanCircular.Pdf do
   end
 
   defp convert_images_to_pdf(image_paths, output, _store_key) do
-    {_result, _globals} =
-      Pythonx.eval(
-        """
-        from PIL import Image
+    # Convert each image to an individual PDF, then merge them.
+    # This avoids complex PostScript and lets GS handle each format natively.
+    pdf_paths =
+      image_paths
+      |> Enum.map(&image_to_single_pdf/1)
+      |> Enum.filter(&match?({:ok, _}, &1))
+      |> Enum.map(fn {:ok, path} -> path end)
 
-        MAX_WIDTH = 1200  # px — enough for readability, avoids huge images
-        JPEG_QUALITY = 70
+    result =
+      if pdf_paths == [] do
+        {:error, :conversion_failed}
+      else
+        case qpdf_merge(pdf_paths, output) do
+          :ok ->
+            Logger.info("Image-based PDF generated: #{output}")
+            {:ok, output}
 
-        images = []
-        for path in image_paths:
-            img = Image.open(str(path, "utf-8"))
-            if img.mode == "RGBA":
-                img = img.convert("RGB")
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end
 
-            # Downscale wide images to MAX_WIDTH, preserving aspect ratio
-            if img.width > MAX_WIDTH:
-                ratio = MAX_WIDTH / img.width
-                new_h = int(img.height * ratio)
-                img = img.resize((MAX_WIDTH, new_h), Image.LANCZOS)
-
-            images.append(img)
-
-        if images:
-            first, *rest = images
-            first.save(
-                str(output_path, "utf-8"), "PDF",
-                save_all=True, append_images=rest,
-                quality=JPEG_QUALITY, optimize=True
-            )
-        """,
-        %{"image_paths" => image_paths, "output_path" => output}
-      )
-
-    Logger.info("Image-based PDF generated: #{output}")
+    # Cleanup intermediate PDFs and downloaded images
+    Enum.each(pdf_paths, &File.rm/1)
     cleanup_temps(image_paths)
-    {:ok, output}
-  rescue
-    e ->
-      Logger.warning("Pillow image-to-PDF failed: #{Exception.message(e)}")
-      cleanup_temps(image_paths)
-      {:error, {:pillow_failed, Exception.message(e)}}
+    result
+  end
+
+  # Converts a single image file (PNG, JPEG, etc.) to a single-page PDF
+  # using ImageMagick's `convert` command. This handles all common image
+  # formats reliably without complex PostScript.
+  #
+  # Returns {:ok, path} or {:error, reason}.
+  defp image_to_single_pdf(image_path) do
+    output = image_path <> ".pdf"
+
+    case System.cmd("convert", [image_path, output], stderr_to_stdout: true) do
+      {_, 0} ->
+        {:ok, output}
+
+      {err, code} ->
+        Logger.warning("Image convert failed for #{image_path} (exit #{code}): #{err}")
+        {:error, {:convert_failed, code}}
+    end
   end
 
   # Local file paths (from image-based scrapers) use file:// scheme
@@ -185,140 +196,210 @@ defmodule NepeanCircular.Pdf do
   defp combine_pdfs(store_paths) do
     File.mkdir_p!(data_dir())
     output = combined_pdf_file()
-    names = Enum.map(store_paths, fn {name, _path} -> name end)
     paths = Enum.map(store_paths, fn {_name, path} -> path end)
 
-    Logger.info("Combining #{length(paths)} PDFs with pypdf → #{output}")
+    Logger.info("Combining #{length(paths)} PDFs with qpdf")
 
-    {_result, _globals} =
-      Pythonx.eval(
-        """
-        from pypdf import PdfReader, PdfWriter
-        from pypdf.annotations import Link
-        from pypdf.generic import Fit, ArrayObject, FloatObject, NameObject
-        from collections import Counter
-        from PIL import Image, ImageDraw, ImageFont
-        import io
+    # Step 1: Count pages per store PDF for TOC link targets
+    store_page_info =
+      store_paths
+      |> Enum.map(fn {name, path} -> {name, path, qpdf_page_count(path)} end)
+      |> Enum.filter(fn {_name, _path, count} -> count > 0 end)
 
-        store_names = [str(n, "utf-8") for n in names]
+    if store_page_info == [] do
+      Logger.warning("No valid PDFs found — nothing to combine")
+      cleanup_temps(paths)
+      {:error, :no_pdfs}
+    else
+      # Step 2: Generate TOC PDF with clickable pdfmark links
+      toc_result = generate_toc_pdf(store_page_info)
 
-        # Read all source PDFs, track which pages belong to which store
-        store_page_ranges = []  # [(name, start_page, page_count)]
-        all_pages = []
-        for i, path in enumerate(pdf_paths):
-            reader = PdfReader(str(path, "utf-8"))
-            start = len(all_pages)
-            for page in reader.pages:
-                all_pages.append(page)
-            store_page_ranges.append((store_names[i], start, len(reader.pages)))
+      # Step 3: Merge TOC + all store PDFs with qpdf
+      merge_result =
+        case toc_result do
+          {:ok, toc_path} ->
+            all_inputs = [toc_path | Enum.map(store_page_info, fn {_n, p, _c} -> p end)]
+            qpdf_merge(all_inputs, output)
 
-        if not all_pages:
-            raise ValueError("No pages found")
+          {:error, _} ->
+            # Fall back to merging without TOC
+            inputs = Enum.map(store_page_info, fn {_n, p, _c} -> p end)
+            qpdf_merge(inputs, output)
+        end
 
-        # Find the most common page width as target
-        widths = [float(p.mediabox.width) for p in all_pages]
-        target_width = Counter(round(w) for w in widths).most_common(1)[0][0]
+      # Cleanup
+      case toc_result do
+        {:ok, toc_path} -> File.rm(toc_path)
+        _ -> :ok
+      end
 
-        # Build index page image with Pillow
-        dpi = 72
-        page_w = int(target_width)
-        margin = 60
-        title_size = 36
-        item_size = 22
-        line_spacing = 50
-        title_bottom_margin = 30
+      cleanup_temps(paths)
 
-        # Calculate height needed
-        content_height = title_size + title_bottom_margin + len(store_names) * line_spacing + margin
-        page_h = max(400, margin + content_height)
+      case merge_result do
+        :ok ->
+          Logger.info("Combined PDF generated: #{output}")
+          generate_email_pdf(output)
+          {:ok, output}
 
-        img = Image.new("RGB", (page_w, page_h), (255, 255, 255))
-        draw = ImageDraw.Draw(img)
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
 
-        try:
-            title_font = ImageFont.truetype("/usr/share/fonts/TTF/DejaVuSans-Bold.ttf", title_size)
-            item_font = ImageFont.truetype("/usr/share/fonts/TTF/DejaVuSans.ttf", item_size)
-        except (OSError, IOError):
-            try:
-                title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", title_size)
-                item_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", item_size)
-            except (OSError, IOError):
-                title_font = ImageFont.load_default(size=title_size)
-                item_font = ImageFont.load_default(size=item_size)
+  # Returns the page count for a PDF file using qpdf.
+  defp qpdf_page_count(path) do
+    case System.cmd("qpdf", ["--show-npages", path], stderr_to_stdout: true) do
+      {output, 0} ->
+        output |> String.trim() |> String.to_integer()
 
-        # Draw title
-        title = "This Week's Flyers"
-        bbox = draw.textbbox((0, 0), title, font=title_font)
-        tw = bbox[2] - bbox[0]
-        draw.text(((page_w - tw) / 2, margin), title, fill=(30, 30, 30), font=title_font)
+      {err, code} ->
+        Logger.warning("qpdf --show-npages failed for #{path} (exit #{code}): #{err}")
+        0
+    end
+  end
 
-        # Draw store names as list items
-        y = margin + title_size + title_bottom_margin
-        link_regions = []  # [(name, x, y, w, h, target_page)]
-        for name, start_page, _count in store_page_ranges:
-            label = f"▸  {name}"
-            draw.text((margin + 10, y), label, fill=(29, 78, 216), font=item_font)
-            bbox = draw.textbbox((margin + 10, y), label, font=item_font)
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
-            # page numbers shift by 1 because index page is page 0
-            link_regions.append((margin + 10, y, text_w, text_h, start_page + 1))
-            y += line_spacing
+  # Merges multiple PDF files into one using qpdf (streaming, memory-efficient).
+  defp qpdf_merge(input_paths, output) do
+    # Syntax: qpdf --empty --pages file1.pdf file2.pdf ... -- output.pdf
+    args = ["--empty", "--pages"] ++ input_paths ++ ["--", output]
 
-        # Convert index image to PDF page
-        index_pdf_bytes = io.BytesIO()
-        img.save(index_pdf_bytes, "PDF")
-        index_pdf_bytes.seek(0)
-        index_reader = PdfReader(index_pdf_bytes)
-        index_page = index_reader.pages[0]
+    case System.cmd("qpdf", args, stderr_to_stdout: true) do
+      {_, 0} ->
+        :ok
 
-        # Build the final PDF: index page first, then all content pages
-        writer = PdfWriter()
-        writer.add_page(index_page)
+      # qpdf exit code 3 = warnings (output still produced and valid)
+      {_, 3} ->
+        if File.exists?(output), do: :ok, else: {:error, :qpdf_failed}
 
-        for page in all_pages:
-            pw = float(page.mediabox.width)
-            ph = float(page.mediabox.height)
-            if abs(pw - target_width) > 1:
-                scale = target_width / pw
-                new_height = ph * scale
-                page.scale_by(scale)
-                page.mediabox.upper_right = (target_width, new_height)
-                page.mediabox.lower_left = (0, 0)
-            writer.add_page(page)
+      {err, code} ->
+        Logger.warning("qpdf merge failed (exit #{code}): #{err}")
+        {:error, {:qpdf_failed, code}}
+    end
+  end
 
-        # Add clickable link annotations on the index page
-        index_page_height = float(index_page.mediabox.height)
-        for lx, ly, lw, lh, target_page in link_regions:
-            # PDF coordinates are bottom-up, Pillow is top-down
-            pdf_y_bottom = index_page_height - ly - lh - 4
-            pdf_y_top = index_page_height - ly + 4
-            rect = (lx - 4, pdf_y_bottom, lx + lw + 4, pdf_y_top)
-            # Get the target page height so we scroll to the very top
-            target_page_height = float(writer.pages[target_page].mediabox.height)
-            link = Link(
-                rect=rect,
-                target_page_index=target_page,
-                fit=Fit.fit_horizontally(top=target_page_height),
-                border=[0, 0, 0],
-            )
-            writer.add_annotation(page_number=0, annotation=link)
-
-        writer.write(str(output_path, "utf-8"))
-        writer.close()
-        """,
-        %{"names" => names, "pdf_paths" => paths, "output_path" => output}
+  # Generates a TOC PDF page using Ghostscript with pdfmark annotations.
+  # The TOC contains the title "This Week's Flyers" and a clickable link
+  # for each store that jumps to the corresponding section in the final PDF.
+  defp generate_toc_pdf(store_page_info) do
+    toc_path =
+      Path.join(
+        System.tmp_dir!(),
+        "nepean_circular_toc_#{:erlang.unique_integer([:positive])}.pdf"
       )
 
-    Logger.info("Combined PDF generated: #{output}")
-    cleanup_temps(paths)
-    generate_email_pdf(output)
-    {:ok, output}
-  rescue
-    e ->
-      Logger.warning("pypdf merge failed: #{Exception.message(e)}")
-      store_paths |> Enum.map(fn {_name, path} -> path end) |> cleanup_temps()
-      {:error, {:pypdf_failed, Exception.message(e)}}
+    # Layout constants (in PDF points, 72 pt = 1 inch)
+    page_width = 612
+    margin = 60
+    title_size = 28
+    item_size = 18
+    line_spacing = 36
+    title_bottom_margin = 24
+
+    # Calculate page height based on content
+    content_height =
+      margin + title_size + title_bottom_margin +
+        length(store_page_info) * line_spacing + margin
+
+    page_height = max(400, content_height)
+
+    # Calculate cumulative page offsets (TOC is page 1, stores start at page 2)
+    {store_entries, _} =
+      Enum.map_reduce(store_page_info, 1, fn {name, _path, count}, acc ->
+        # acc is 1-based page number in the final doc (1 = TOC page)
+        {{name, acc + 1}, acc + count}
+      end)
+
+    # Build PostScript with pdfmark annotations
+    title = "This Week's Flyers"
+    title_x = margin
+    title_y = page_height - margin - title_size
+
+    ps_lines = [
+      "%!PS-Adobe-3.0",
+      "<< /PageSize [#{page_width} #{page_height}] >> setpagedevice",
+      "",
+      "%% --- Title ---",
+      "/Helvetica-Bold findfont #{title_size} scalefont setfont",
+      "0.12 0.12 0.12 setrgbcolor",
+      "#{title_x} #{title_y} moveto",
+      "(#{ps_escape(title)}) show",
+      ""
+    ]
+
+    # Draw each store name and add a pdfmark link annotation
+    {item_lines, _} =
+      Enum.map_reduce(store_entries, 0, fn {name, target_page}, idx ->
+        y = title_y - title_bottom_margin - (idx + 1) * line_spacing
+        x = margin + 10
+        label = "\\270  #{ps_escape(name)}"
+
+        # Approximate text width: ~0.5 * font_size * char_count for Helvetica
+        approx_width = 0.55 * item_size * String.length(name) + 30
+
+        lines = [
+          "%% --- #{name} ---",
+          "/Helvetica findfont #{item_size} scalefont setfont",
+          "0.11 0.31 0.85 setrgbcolor",
+          "#{x} #{y} moveto",
+          "(#{label}) show",
+          "",
+          "%% Link annotation → page #{target_page}",
+          "[ /Rect [#{x - 4} #{y - 4} #{x + round(approx_width) + 4} #{y + item_size + 4}]",
+          "  /Border [0 0 0]",
+          "  /Page #{target_page}",
+          "  /View [/FitH #{page_height}]",
+          "  /Subtype /Link",
+          "/ANN pdfmark",
+          ""
+        ]
+
+        {Enum.join(lines, "\n"), idx + 1}
+      end)
+
+    ps_content =
+      Enum.join(ps_lines, "\n") <> "\n" <> Enum.join(item_lines, "\n") <> "\nshowpage\n"
+
+    ps_file =
+      Path.join(
+        System.tmp_dir!(),
+        "nepean_circular_toc_#{:erlang.unique_integer([:positive])}.ps"
+      )
+
+    File.write!(ps_file, ps_content)
+
+    args = [
+      "-sDEVICE=pdfwrite",
+      "-dCompatibilityLevel=1.4",
+      "-dNOPAUSE",
+      "-dBATCH",
+      "-dQUIET",
+      "-sOutputFile=#{toc_path}",
+      "-f",
+      ps_file
+    ]
+
+    result =
+      case System.cmd("gs", args, stderr_to_stdout: true) do
+        {_, 0} ->
+          Logger.info("TOC PDF generated with #{length(store_page_info)} store links")
+          {:ok, toc_path}
+
+        {gs_output, code} ->
+          Logger.warning("Ghostscript TOC generation failed (exit #{code}): #{gs_output}")
+          {:error, {:gs_failed, code}}
+      end
+
+    File.rm(ps_file)
+    result
+  end
+
+  # Escapes special PostScript string characters.
+  defp ps_escape(str) do
+    str
+    |> String.replace("\\", "\\\\")
+    |> String.replace("(", "\\(")
+    |> String.replace(")", "\\)")
   end
 
   @doc """
@@ -347,6 +428,12 @@ defmodule NepeanCircular.Pdf do
       "-dColorImageResolution=72",
       "-dGrayImageResolution=72",
       "-dMonoImageResolution=72",
+      # Lower JPEG quality for smaller file size
+      "-dJPEGQ=50",
+      "-dAutoFilterColorImages=false",
+      "-dColorImageFilter=/DCTEncode",
+      "-dAutoFilterGrayImages=false",
+      "-dGrayImageFilter=/DCTEncode",
       "-sOutputFile=#{output}",
       source_path
     ]

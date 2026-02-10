@@ -5,7 +5,7 @@ A Phoenix web app that automatically scrapes weekly grocery flyers from local Ne
 ## Features
 
 - **Automated flyer scraping** — Oban cron jobs scrape store websites daily at 6 AM for new flyers
-- **PDF processing** — Uses Python (via `pythonx`) with `pypdf` and `Pillow` to extract flyer pages as images
+- **PDF processing** — Uses `qpdf` and Ghostscript for memory-efficient PDF merging, image→PDF conversion, and TOC generation with clickable links
 - **Weekly email digest** — Sends subscribers a combined flyer email every Thursday at 8 AM
 - **Email subscriptions** — Subscribe/unsubscribe with token-based one-click unsubscribe
 - **Per-store views** — Browse current flyers by store
@@ -17,7 +17,7 @@ A Phoenix web app that automatically scrapes weekly grocery flyers from local Ne
 - **Ash Framework** for domain modelling (stores, flyers, subscribers)
 - **SQLite** via `ecto_sqlite3` / `ash_sqlite`
 - **Oban** (Lite engine) for background jobs and cron scheduling
-- **Pythonx** for PDF-to-image extraction (`pypdf`, `Pillow`)
+- **Ghostscript + qpdf** for PDF processing (merge, image→PDF, TOC with links)
 - **Swoosh + Postmark** for transactional email
 - **Tailwind CSS v4** for styling
 - **Deployed** to DigitalOcean Kubernetes (DOKS) via GitHub Actions CI/CD
@@ -25,7 +25,8 @@ A Phoenix web app that automatically scrapes weekly grocery flyers from local Ne
 ## Prerequisites
 
 - Elixir ~> 1.18 / OTP 27
-- Python 3.13 (for `pythonx` PDF processing)
+- Ghostscript (`gs`) for PDF generation
+- qpdf for PDF merging
 
 ## Getting Started
 
@@ -83,7 +84,7 @@ lib/
 │   ├── flyers/              # Ash resources
 │   ├── scraping/            # Per-store scraper modules
 │   ├── workers/             # Oban workers (scrape, email)
-│   ├── pdf.ex               # PDF processing via pythonx
+│   ├── pdf.ex               # PDF processing via qpdf + Ghostscript
 │   ├── emails.ex            # Email templates
 │   └── http.ex              # HTTP client helpers
 ├── nepean_circular_web/

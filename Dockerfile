@@ -2,7 +2,7 @@
 # https://hub.docker.com/r/hexpm/elixir/tags
 #
 # This file is based on the Phoenix 1.8 release Dockerfile.
-# Adjusted for SQLite + pythonx (Python 3.13 with pypdf/Pillow).
+# Adjusted for SQLite + qpdf/Ghostscript for PDF processing.
 
 ARG ELIXIR_VERSION=1.18.3
 ARG OTP_VERSION=27.2.1
@@ -15,9 +15,9 @@ ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
 # ===========================================================================
 FROM ${BUILDER_IMAGE} AS builder
 
-# Install build-time deps (git for heroicons, python3 + venv for pythonx)
+# Install build-time deps (git for heroicons)
 RUN apt-get update -y && \
-    apt-get install -y build-essential git python3 python3-venv curl && \
+    apt-get install -y build-essential git curl && \
     apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 WORKDIR /app
@@ -64,14 +64,13 @@ FROM ${RUNNER_IMAGE}
 # - openssl: for crypto
 # - libncurses5: for Erlang remote_console
 # - locales: for UTF-8 locale
-# - python3 + python3-venv + python3-pip: pythonx runtime (pypdf, Pillow)
-# - libimage libraries: Pillow dependencies
+# - ghostscript: PDF generation (TOC with pdfmark links, email compression)
+# - qpdf: memory-efficient PDF merging
+# - imagemagick: image→PDF conversion for image-based flyer scrapers
 RUN apt-get update -y && \
     apt-get install -y \
       libstdc++6 openssl libncurses5 locales ca-certificates \
-      python3 python3-venv python3-pip \
-      libjpeg62-turbo libpng16-16 zlib1g libfreetype6 \
-      ghostscript \
+      ghostscript qpdf imagemagick \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Set the locale

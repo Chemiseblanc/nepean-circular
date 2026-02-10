@@ -66,7 +66,6 @@ defmodule NepeanCircular.MixProject do
       {:oban, "~> 2.0"},
       {:floki, "~> 0.37"},
       {:req, "~> 0.5"},
-      {:pythonx, "~> 0.4.0"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 1.0"},

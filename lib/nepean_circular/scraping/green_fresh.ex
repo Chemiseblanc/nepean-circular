@@ -4,7 +4,7 @@ defmodule NepeanCircular.Scraping.GreenFresh do
 
   This store publishes flyer pages as PNG images rather than a PDF.
   We extract the image URLs, download them, and convert to a single
-  PDF using Pillow via Pythonx.
+  PDF using Ghostscript.
   """
 
   @behaviour NepeanCircular.Scraping.Scraper
