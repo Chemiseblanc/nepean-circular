@@ -22,7 +22,8 @@ defmodule NepeanCircularWeb.Router do
   scope "/", NepeanCircularWeb do
     pipe_through :browser
 
-    live "/", HomeLive
+    get "/", PageController, :home
+    post "/subscribe", PageController, :subscribe
     live "/stores/:id", StoreLive
     get "/flyers/combined.pdf", FlyerController, :combined
     get "/unsubscribe", UnsubscribeController, :unsubscribe
