@@ -200,21 +200,28 @@ defmodule NepeanCircular.Pdf do
 
     Logger.info("Combining #{length(paths)} PDFs with qpdf")
 
-    # Step 1: Count pages per store PDF for TOC link targets
+    # Step 1: Determine target page width (most common across all store PDFs)
+    target_width = find_target_width(store_paths)
+    Logger.info("Target page width: #{target_width} pts")
+
+    # Step 2: Normalize all store PDFs to the target width
+    {normalized_store_paths, normalized_temps} = normalize_store_pdfs(store_paths, target_width)
+
+    # Step 3: Count pages per normalized PDF for TOC link targets
     store_page_info =
-      store_paths
+      normalized_store_paths
       |> Enum.map(fn {name, path} -> {name, path, qpdf_page_count(path)} end)
       |> Enum.filter(fn {_name, _path, count} -> count > 0 end)
 
     if store_page_info == [] do
       Logger.warning("No valid PDFs found — nothing to combine")
-      cleanup_temps(paths)
+      cleanup_temps(paths ++ normalized_temps)
       {:error, :no_pdfs}
     else
-      # Step 2: Generate TOC PDF with clickable pdfmark links
-      toc_result = generate_toc_pdf(store_page_info)
+      # Step 4: Generate TOC PDF with clickable pdfmark links (using target width)
+      toc_result = generate_toc_pdf(store_page_info, target_width)
 
-      # Step 3: Merge TOC + all store PDFs with qpdf
+      # Step 5: Merge TOC + all normalized store PDFs with qpdf
       merge_result =
         case toc_result do
           {:ok, toc_path} ->
@@ -233,7 +240,7 @@ defmodule NepeanCircular.Pdf do
         _ -> :ok
       end
 
-      cleanup_temps(paths)
+      cleanup_temps(paths ++ normalized_temps)
 
       case merge_result do
         :ok ->
@@ -244,6 +251,164 @@ defmodule NepeanCircular.Pdf do
         {:error, reason} ->
           {:error, reason}
       end
+    end
+  end
+
+  # Returns a list of page widths (in PDF points) for a given PDF file.
+  # Uses qpdf JSON output to read MediaBox from each page object.
+  defp get_page_widths(path) do
+    case System.cmd("qpdf", ["--json=2", path], stderr_to_stdout: true) do
+      {json_output, code} when code in [0, 3] ->
+        case Jason.decode(json_output) do
+          {:ok, %{"pages" => pages, "qpdf" => [_header, objects]}} ->
+            Enum.map(pages, fn %{"object" => obj_ref} ->
+              obj_key = "obj:#{obj_ref}"
+              mediabox_width_from_object(objects, obj_key)
+            end)
+            |> Enum.reject(&is_nil/1)
+
+          _ ->
+            []
+        end
+
+      {err, code} ->
+        Logger.warning(
+          "qpdf JSON failed for #{path} (exit #{code}): #{String.slice(err, 0, 200)}"
+        )
+
+        []
+    end
+  end
+
+  # Extracts the width from a page object's /MediaBox, falling back to
+  # the parent /Pages node if /MediaBox is inherited.
+  defp mediabox_width_from_object(objects, obj_key) do
+    case objects[obj_key] do
+      %{"value" => %{"/MediaBox" => [_, _, w, _]}} ->
+        w
+
+      %{"value" => %{"/Parent" => parent_ref}} ->
+        parent_key = "obj:#{parent_ref}"
+
+        case objects[parent_key] do
+          %{"value" => %{"/MediaBox" => [_, _, w, _]}} -> w
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  # Determines the target page width by finding the most common width
+  # (rounded to nearest integer) across all store PDFs.
+  defp find_target_width(store_paths) do
+    all_widths =
+      store_paths
+      |> Enum.flat_map(fn {_name, path} -> get_page_widths(path) end)
+      |> Enum.map(&round/1)
+
+    if all_widths == [] do
+      612
+    else
+      all_widths
+      |> Enum.frequencies()
+      |> Enum.max_by(fn {_width, count} -> count end)
+      |> elem(0)
+    end
+  end
+
+  # Normalizes each store PDF to the target width using Ghostscript.
+  # Returns {normalized_store_paths, temp_files_to_cleanup}.
+  defp normalize_store_pdfs(store_paths, target_width) do
+    {normalized, temps} =
+      Enum.map_reduce(store_paths, [], fn {name, path}, acc_temps ->
+        case normalize_pdf_width(path, target_width) do
+          {:ok, ^path} ->
+            # Already correct width, no temp file created
+            {{name, path}, acc_temps}
+
+          {:ok, normalized_path} ->
+            Logger.info("Normalized #{name} to #{target_width}pt width")
+            {{name, normalized_path}, [normalized_path | acc_temps]}
+
+          {:error, _} ->
+            # Normalization failed, use original
+            Logger.warning("Width normalization failed for #{name}, using original")
+            {{name, path}, acc_temps}
+        end
+      end)
+
+    {normalized, temps}
+  end
+
+  # Normalizes a PDF's page widths to the target width using Ghostscript.
+  # Uses a PostScript BeginPage procedure that dynamically scales each page
+  # and adjusts the output page size proportionally.
+  # Returns {:ok, path} (possibly the original if no scaling needed).
+  defp normalize_pdf_width(path, target_width) do
+    widths = get_page_widths(path)
+    needs_scaling = Enum.any?(widths, fn w -> abs(w - target_width) > 1 end)
+
+    if needs_scaling do
+      output =
+        Path.join(
+          System.tmp_dir!(),
+          "nepean_normalized_#{:erlang.unique_integer([:positive])}.pdf"
+        )
+
+      ps_file =
+        Path.join(
+          System.tmp_dir!(),
+          "nepean_normalize_#{:erlang.unique_integer([:positive])}.ps"
+        )
+
+      ps_content = """
+      /target_w #{target_width} def
+      << /BeginPage {
+        pop
+        currentpagedevice /PageSize get aload pop
+        /cur_h exch def
+        /cur_w exch def
+        cur_w target_w sub abs 1 gt {
+          target_w cur_w div /sf exch def
+          << /PageSize [target_w cur_h sf mul] >> setpagedevice
+          sf sf scale
+        } if
+      } >> setpagedevice
+      """
+
+      File.write!(ps_file, ps_content)
+
+      args = [
+        "-sDEVICE=pdfwrite",
+        "-dCompatibilityLevel=1.4",
+        "-dNOPAUSE",
+        "-dBATCH",
+        "-dQUIET",
+        "-sOutputFile=#{output}",
+        "-f",
+        ps_file,
+        path
+      ]
+
+      result =
+        case System.cmd("gs", args, stderr_to_stdout: true) do
+          {_, 0} ->
+            {:ok, output}
+
+          {gs_output, code} ->
+            Logger.warning(
+              "GS width normalization failed (exit #{code}): #{String.slice(gs_output, 0, 200)}"
+            )
+
+            {:error, {:gs_failed, code}}
+        end
+
+      File.rm(ps_file)
+      result
+    else
+      {:ok, path}
     end
   end
 
@@ -281,7 +446,8 @@ defmodule NepeanCircular.Pdf do
   # Generates a TOC PDF page using Ghostscript with pdfmark annotations.
   # The TOC contains the title "This Week's Flyers" and a clickable link
   # for each store that jumps to the corresponding section in the final PDF.
-  defp generate_toc_pdf(store_page_info) do
+  # The page width matches the target width used for normalization.
+  defp generate_toc_pdf(store_page_info, page_width) do
     toc_path =
       Path.join(
         System.tmp_dir!(),
@@ -289,7 +455,6 @@ defmodule NepeanCircular.Pdf do
       )
 
     # Layout constants (in PDF points, 72 pt = 1 inch)
-    page_width = 612
     margin = 60
     title_size = 28
     item_size = 18
