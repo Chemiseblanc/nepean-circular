@@ -31,6 +31,23 @@
       </form>
     </div>
 
+    <div :if={@stores != []} class="max-w-md mx-auto">
+      <h2 class="text-lg font-semibold mb-3">Stores</h2>
+      <ul id="store-list" class="space-y-1">
+        <li :for={store <- @stores} class="flex items-center gap-2">
+          <.icon name="hero-building-storefront-mini" class="size-4 text-base-content/50" />
+          <a
+            href={store.homepage}
+            target="_blank"
+            rel="noopener"
+            class="link link-hover text-primary"
+          >
+            {store.name}
+          </a>
+        </li>
+      </ul>
+    </div>
+
     <div :if={@has_combined_pdf} class="flex justify-center">
       <a
         href={@combined_pdf_path}

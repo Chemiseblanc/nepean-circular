@@ -4,8 +4,17 @@ defmodule NepeanCircularWeb.PageController do
   alias NepeanCircular.{Flyers, Pdf}
 
   def home(conn, _params) do
+    {:ok, stores} = Flyers.list_stores()
+
+    stores_with_homepages =
+      Enum.map(stores, fn store ->
+        uri = URI.parse(store.url)
+        %{name: store.name, homepage: "#{uri.scheme}://#{uri.host}"}
+      end)
+
     conn
     |> assign(:page_title, "Weekly Flyers")
+    |> assign(:stores, stores_with_homepages)
     |> assign(:has_combined_pdf, Pdf.combined_pdf_exists?())
     |> assign(:combined_pdf_path, Pdf.combined_pdf_path())
     |> assign(:scraping?, scraping_in_progress?())
